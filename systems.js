@@ -1,22 +1,25 @@
+
 "use strict";
 
 const storage = require("./storage");
 
-function initializeSystems(client) {
+async function initializeSystems(client) {
   storage.ensureDirectories();
 
-  console.log("[ZAYRA] Armazenamento inicializado.");
+  console.log("[ZAYRA] Sistemas inicializados.");
 
   client.on("guildCreate", guild => {
     try {
-      storage.readGuild(guild.id);
+      const data = storage.getGuild(guild.id);
+
+      storage.saveGuild(guild.id, data);
 
       console.log(
-        `[ZAYRA] Servidor conectado: ${guild.name}`
+        `[ZAYRA] Configuração criada para: ${guild.name}`
       );
     } catch (error) {
       console.error(
-        `[ZAYRA] Erro ao carregar ${guild.id}:`,
+        `[ZAYRA] Erro ao configurar ${guild.name}:`,
         error
       );
     }
