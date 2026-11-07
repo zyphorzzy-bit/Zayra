@@ -9,90 +9,136 @@ const storage = require("./storage");
 const utils = require("./utils");
 const panels = require("./panels");
 
+const SYSTEMS = {
+  moderation: {
+    title: "Moderação",
+    description:
+      "Configure as funções de moderação do servidor.\n\n" +
+      "As opções de punição e registros serão configuradas neste painel."
+  },
+
+  tickets: {
+    title: "Tickets",
+    description:
+      "Configure os tickets de atendimento.\n\n" +
+      "Escolha o canal do painel, a categoria e o cargo de suporte."
+  },
+
+  security: {
+    title: "Segurança",
+    description:
+      "Configure os sistemas de proteção do servidor.\n\n" +
+      "Anti-spam, anti-links, anti-raid e honeypot."
+  },
+
+  instagram: {
+    title: "Instagram",
+    description:
+      "Configure o Instagram interno da ZAYRA.\n\n" +
+      "Publicações, curtidas, comentários e controle de conteúdo."
+  },
+
+  welcome: {
+    title: "Boas-vindas",
+    description:
+      "Configure mensagens de entrada e saída dos membros."
+  },
+
+  publications: {
+    title: "Publicações",
+    description:
+      "Configure os canais e controles de publicações."
+  }
+};
+
 async function handleButton(interaction) {
-  if (!interaction.guild) {
-    return interaction.reply({
-      content: "Esse painel só funciona dentro do servidor.",
-      ephemeral: true
-    });
-  }
-
-  const data = storage.readGuild(interaction.guild.id);
-
-  const allowed = utils.canManageConfig(
-    interaction.guild,
-    interaction.member,
-    data
-  );
-
-  if (!allowed) {
-    return interaction.reply({
-      content: "Você não tem permissão para usar esse painel.",
-      ephemeral: true
-    });
-  }
-
   const customId = interaction.customId;
 
-  if (customId === "zayra:back") {
-    return interaction.update(
+  if (!customId.startsWith("zayra:")) {
+    return false;
+  }
+
+  if (!interaction.guild) {
+    await interaction.reply({
+      content: "Esse painel só funciona dentro de um servidor.",
+      flags: MessageFlags.Ephemeral
+    });
+
+    return true;
+  }
+
+  const data = storage.getGuild(interaction.guild.id);
+
+  if (
+    !utils.canManageConfig(
+      interaction.guild,
+      interaction.member,
+      data
+    )
+  ) {
+    await interaction.reply({
+      content: "Você não tem permissão para usar esse painel.",
+      flags: MessageFlags.Ephemeral
+    });
+
+    return true;
+  }
+
+  const action = customId.slice("zayra:".length);
+
+  if (action === "back") {
+    await interaction.update(
       panels.createHomePanel()
     );
+
+    return true;
   }
 
-  const systems = {
-    "zayra:config:moderation": {
-      title: "Moderação",
-      description:
-        "Configurações de punições, advertências e permissões."
-    },
+  const system = SYSTEMS[action];
 
-    "zayra:config:tickets": {
-      title: "Tickets",
-      description:
-        "Configurações do sistema de atendimento."
-    },
-
-    "zayra:config:security": {
-      title: "Segurança",
-      description:
-        "Configurações de proteção e segurança do servidor."
-    },
-
-    "zayra:config:feed": {
-      title: "Feed",
-      description:
-        "Configurações das publicações e interações do feed."
-    }
-  };
-
-  const selected = systems[customId];
-
-  if (!selected) {
-    return interaction.reply({
-      content: "Esse botão não está configurado.",
-      ephemeral: true
+  if (!system) {
+    await interaction.reply({
+      content: "Essa opção não existe.",
+      flags: MessageFlags.Ephemeral
     });
+
+    return true;
   }
 
-  const container = panels.createPanel(
-    selected.title,
-    selected.description
+  await interaction.update(
+    panels.createSimplePanel(
+      system.title,
+      system.description
+    )
   );
 
-  panels.addSeparator(container);
+  return true;
+}
 
-  const backRow = panels.createButtonRow(
-    panels.createBackButton()
-  );
+async function handleSelectMenu(interaction) {
+  if (!interaction.customId.startsWith("zayra:")) {
+    return false;
+  }
 
-  return interaction.update({
-    flags: MessageFlags.IsComponentsV2,
-    components: [
-      container,
-      backRow
-    ]
+  await interaction.reply({
+    content: "Esse seletor ainda não foi configurado.",
+    flags: MessageFlags.Ephemeral
   });
+
+  return true;
+}
+
+async function handleModal(interaction) {
+  if (!interaction.customId.startsWith("zayra:")) {
+    return false;
+  }
+
+  await interaction.reply({
+    content: "Esse formulário ainda não foi configurado.",
+    flags: MessageFlags.Ephemeral
+  });
+
+  return true;
 }
 
 async function handleInteraction(interaction) {
@@ -102,34 +148,36 @@ async function handleInteraction(interaction) {
     }
 
     if (interaction.isStringSelectMenu()) {
-      return interaction.reply({
-        content: "Esse menu ainda não foi conectado.",
-        ephemeral: true
-      });
+      return await handleSelectMenu(interaction);
     }
 
     if (interaction.isModalSubmit()) {
-      return interaction.reply({
-        content: "Esse formulário ainda não foi conectado.",
-        ephemeral: true
-      });
+      return await handleModal(interaction);
     }
-  } catch (error) {
-    console.error("Erro em uma interação:", error);
 
-    const response = {
-      content: "Ocorreu um erro ao processar essa interação.",
-      ephemeral: true
-    };
+    return false;
+  } catch (error) {
+    console.error("Erro na interação da ZAYRA:", error);
 
     if (interaction.replied || interaction.deferred) {
-      return interaction.followUp(response);
+      await interaction.followUp({
+        content: "Ocorreu um erro ao processar essa interação.",
+        flags: MessageFlags.Ephemeral
+      }).catch(() => {});
+    } else {
+      await interaction.reply({
+        content: "Ocorreu um erro ao processar essa interação.",
+        flags: MessageFlags.Ephemeral
+      }).catch(() => {});
     }
 
-    return interaction.reply(response);
+    return true;
   }
 }
 
 module.exports = {
-  handleInteraction
+  handleInteraction,
+  handleButton,
+  handleSelectMenu,
+  handleModal
 };
