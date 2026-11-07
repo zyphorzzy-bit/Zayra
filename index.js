@@ -6,24 +6,25 @@ const {
   GatewayIntentBits,
   Partials,
   REST,
-  Routes
+  Routes,
+  MessageFlags
 } = require("discord.js");
 
 const config = require("./config");
-const commandsHandler = require("./commands");
-const interactionsHandler = require("./interactions");
+const commands = require("./commands");
+const interactions = require("./interactions");
 const systems = require("./systems");
 const storage = require("./storage");
 
-const token = process.env.DISCORD_TOKEN;
-const clientId = process.env.DISCORD_CLIENT_ID;
+const TOKEN = process.env.DISCORD_TOKEN;
+const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 
-if (!token || !clientId) {
-  console.error(
-    "Configure DISCORD_TOKEN e DISCORD_CLIENT_ID nas variáveis da hospedagem."
-  );
+if (!TOKEN) {
+  throw new Error("A variável DISCORD_TOKEN não está configurada.");
+}
 
-  process.exit(1);
+if (!CLIENT_ID) {
+  throw new Error("A variável DISCORD_CLIENT_ID não está configurada.");
 }
 
 const client = new Client({
@@ -34,71 +35,55 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildModeration
   ],
+
   partials: [
-    Partials.User,
+    Partials.Channel,
     Partials.Message,
     Partials.GuildMember
   ]
 });
 
-const rest = new REST({
-  version: "10"
-}).setToken(token);
-
 async function registerCommands() {
-  const commands = commandsHandler.commands.map(
-    command => command.toJSON()
-  );
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
 
   await rest.put(
-    Routes.applicationCommands(clientId),
-    { body: commands }
+    Routes.applicationCommands(CLIENT_ID),
+    {
+      body: [
+        commands.data.toJSON()
+      ]
+    }
   );
 
   console.log("[ZAYRA] Comandos registrados.");
 }
 
 client.once("ready", async () => {
-  console.log(
-    `[ZAYRA] Online como ${client.user.tag}`
-  );
+  console.log(`[ZAYRA] Online como ${client.user.tag}`);
 
   storage.ensureDirectories();
 
-  systems.initializeSystems(client);
-
-  try {
-    await registerCommands();
-  } catch (error) {
-    console.error(
-      "[ZAYRA] Erro ao registrar comandos:",
-      error
-    );
-  }
+  await systems.initializeSystems(client);
+  await registerCommands();
 });
 
 client.on("interactionCreate", async interaction => {
   try {
-    if (
-      interaction.isChatInputCommand() &&
-      interaction.commandName === "config"
-    ) {
-      await commandsHandler.execute(interaction);
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === "config") {
+        await commands.execute(interaction);
+      }
+
       return;
     }
 
-    await interactionsHandler.handleInteraction(
-      interaction
-    );
+    await interactions.handleInteraction(interaction);
   } catch (error) {
-    console.error(
-      "[ZAYRA] Erro na interação:",
-      error
-    );
+    console.error("[ZAYRA] Erro na interação:", error);
 
     const response = {
-      content: "Ocorreu um erro ao executar essa ação.",
-      ephemeral: true
+      content: "Ocorreu um erro ao executar essa interação.",
+      flags: MessageFlags.Ephemeral
     };
 
     if (interaction.replied || interaction.deferred) {
@@ -110,7 +95,7 @@ client.on("interactionCreate", async interaction => {
 });
 
 client.on("error", error => {
-  console.error("[ZAYRA] Erro do cliente:", error);
+  console.error("[ZAYRA] Erro do Discord:", error);
 });
 
-client.login(token);
+client.login(TOKEN);
