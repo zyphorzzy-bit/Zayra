@@ -4,46 +4,41 @@
 const {
   SlashCommandBuilder,
   ChannelType,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  MessageFlags
 } = require("discord.js");
 
 const storage = require("./storage");
 const utils = require("./utils");
 const panels = require("./panels");
 
-const commands = [
-  new SlashCommandBuilder()
-    .setName("config")
-    .setDescription("Configurar os sistemas da ZAYRA")
-    .addChannelOption(option =>
-      option
-        .setName("canal")
-        .setDescription("Canal onde o painel será publicado")
-        .addChannelTypes(ChannelType.GuildText)
-        .setRequired(false)
-    )
-];
+const configCommand = new SlashCommandBuilder()
+  .setName("config")
+  .setDescription("Abrir o painel de configuração da ZAYRA")
+  .addChannelOption(option =>
+    option
+      .setName("canal")
+      .setDescription("Canal onde o painel será publicado")
+      .addChannelTypes(ChannelType.GuildText)
+      .setRequired(false)
+  );
 
-async function execute(interaction) {
+async function executeConfig(interaction) {
   if (!interaction.guild) {
     return interaction.reply({
-      content: "Esse comando só pode ser usado em um servidor.",
-      ephemeral: true
+      content: "Esse comando só pode ser usado dentro de um servidor.",
+      flags: MessageFlags.Ephemeral
     });
   }
 
-  const data = storage.readGuild(interaction.guild.id);
+  const guild = interaction.guild;
+  const member = interaction.member;
+  const data = storage.getGuild(guild.id);
 
-  const allowed = utils.canManageConfig(
-    interaction.guild,
-    interaction.member,
-    data
-  );
-
-  if (!allowed) {
+  if (!utils.canManageConfig(guild, member, data)) {
     return interaction.reply({
       content: "Você não tem permissão para configurar a ZAYRA.",
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -54,33 +49,42 @@ async function execute(interaction) {
   if (!channel || !channel.isTextBased()) {
     return interaction.reply({
       content: "Escolha um canal de texto válido.",
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 
+  const botMember = guild.members.me;
+
   if (
-    !channel.permissionsFor(interaction.guild.members.me)
-      ?.has(PermissionFlagsBits.SendMessages)
+    !botMember ||
+    !channel
+      .permissionsFor(botMember)
+      .has(PermissionFlagsBits.SendMessages)
   ) {
     return interaction.reply({
       content: "Não tenho permissão para enviar mensagens nesse canal.",
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 
-  const message = await channel.send(
-    panels.createHomePanel()
-  );
+  try {
+    await channel.send(panels.createHomePanel());
 
-  await interaction.reply({
-    content: `Painel da ZAYRA publicado em ${channel}.`,
-    ephemeral: true
-  });
+    return interaction.reply({
+      content: `Painel da ZAYRA publicado em ${channel}.`,
+      flags: MessageFlags.Ephemeral
+    });
+  } catch (error) {
+    console.error("Erro ao publicar painel:", error);
 
-  return message;
+    return interaction.reply({
+      content: "Não consegui publicar o painel.",
+      flags: MessageFlags.Ephemeral
+    });
+  }
 }
 
 module.exports = {
-  commands,
-  execute
+  data: configCommand,
+  execute: executeConfig
 };
