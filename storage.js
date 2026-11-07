@@ -3,51 +3,100 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-
 const config = require("./config");
 
-const serversPath = path.resolve(config.storage.servers);
-const backupsPath = path.resolve(config.storage.backups);
+const serverDirectory = path.resolve(config.storage.servers);
+const backupDirectory = path.resolve(config.storage.backups);
 
 const queues = new Map();
 
-const defaultGuildData = (guildId) => ({
-  guildId,
-  version: 1,
-  settings: {
-    prefix: config.prefix,
-    language: "pt-BR"
-  },
-  permissions: {
-    configManagers: [],
-    advRoles: [],
-    staffRoles: [],
-    supportRoles: []
-  },
-  systems: {
-    moderation: {},
-    tickets: {},
-    security: {},
-    instagram: {},
-    welcome: {},
-    goodbye: {},
-    cleanup: {},
-    publications: {},
-    premium: {}
-  }
-});
-
 function ensureDirectories() {
-  fs.mkdirSync(serversPath, { recursive: true });
-  fs.mkdirSync(backupsPath, { recursive: true });
+  fs.mkdirSync(serverDirectory, { recursive: true });
+  fs.mkdirSync(backupDirectory, { recursive: true });
+}
+
+function validateGuildId(guildId) {
+  if (!/^\d{17,20}$/.test(String(guildId))) {
+    throw new Error("ID de servidor inválido.");
+  }
 }
 
 function getGuildPath(guildId) {
-  if (!/^\d{17,20}$/.test(guildId)) {
-    throw new Error("ID de servidor inválido.");
-  }
+  validateGuildId(guildId);
+  return path.join(serverDirectory, `${guildId}.json`);
+}
 
-  return path.join(serversPath, `${guildId}.json`);
+function defaultGuildData(guildId) {
+  return {
+    version: 1,
+    guildId,
+
+    settings: {
+      prefix: config.prefix,
+      language: "pt-BR"
+    },
+
+    permissions: {
+      configManagers: [],
+      advRoles: [],
+      staffRoles: [],
+      supportRoles: []
+    },
+
+    systems: {
+      moderation: {
+        enabled: false,
+        logChannel: null
+      },
+
+      tickets: {
+        enabled: false,
+        panelChannel: null,
+        category: null,
+        supportRole: null,
+        transcriptChannel: null,
+        counter: 0,
+        openTickets: {}
+      },
+
+      security: {
+        enabled: false,
+        logChannel: null,
+        antiSpam: false,
+        antiLinks: false,
+        antiRaid: false,
+        honeypotChannel: null
+      },
+
+      instagram: {
+        enabled: false,
+        channel: null,
+        posts: {}
+      },
+
+      welcome: {
+        enabled: false,
+        channel: null,
+        message: "Bem-vindo(a) ao servidor, {user}!"
+      },
+
+      goodbye: {
+        enabled: false,
+        channel: null,
+        message: "Até mais, {user}!"
+      },
+
+      cleanup: {
+        enabled: false,
+        channel: null
+      },
+
+      publications: {
+        enabled: false,
+        channel: null
+      }
+    }
+  };
 }
 
 function readGuild(guildId) {
@@ -60,18 +109,16 @@ function readGuild(guildId) {
   }
 
   try {
-    const data = JSON.parse(
-      fs.readFileSync(filePath, "utf8")
-    );
+    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
 
     if (data.guildId !== guildId) {
-      throw new Error("O ID do servidor não corresponde.");
+      throw new Error("O arquivo pertence a outro servidor.");
     }
 
     return data;
   } catch (error) {
     throw new Error(
-      `Não foi possível ler a configuração de ${guildId}: ${error.message}`
+      `Não foi possível ler a configuração do servidor ${guildId}: ${error.message}`
     );
   }
 }
@@ -82,47 +129,52 @@ function saveGuild(guildId, data) {
   const filePath = getGuildPath(guildId);
   const temporaryPath = `${filePath}.tmp`;
 
-  const safeData = {
-    ...data,
-    guildId,
-    version: 1
-  };
+  data.guildId = guildId;
+  data.version = 1;
 
   fs.writeFileSync(
     temporaryPath,
-    JSON.stringify(safeData, null, 2),
+    JSON.stringify(data, null, 2),
     "utf8"
   );
 
   fs.renameSync(temporaryPath, filePath);
 
-  return safeData;
+  return data;
 }
 
-function updateGuild(guildId, updater) {
+async function updateGuild(guildId, updater) {
   const previous = queues.get(guildId) || Promise.resolve();
 
   const current = previous
     .catch(() => {})
-    .then(() => {
+    .then(async () => {
       const data = readGuild(guildId);
-      const updated = updater(data);
+      const updated = await updater(data);
 
       return saveGuild(guildId, updated || data);
     });
 
   queues.set(guildId, current);
 
-  return current.finally(() => {
+  try {
+    return await current;
+  } finally {
     if (queues.get(guildId) === current) {
       queues.delete(guildId);
     }
-  });
+  }
+}
+
+function getGuild(guildId) {
+  return readGuild(guildId);
 }
 
 module.exports = {
   ensureDirectories,
   defaultGuildData,
+  getGuildPath,
+  getGuild,
   readGuild,
   saveGuild,
   updateGuild
